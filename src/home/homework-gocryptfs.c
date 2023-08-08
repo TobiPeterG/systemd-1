@@ -30,6 +30,122 @@
 #include "user-util.h"
 #include "xattr-util.h"
 
+static int is_gocryptfs_directory_fd(int dir_fd){
+        /* Check if the directory is already a gocryptfs encrypted directory.
+           This can be done by checking for the presence of the gocryptfs.conf file */
+        struct stat st;
+        if (fstatat(dir_fd, "gocryptfs.conf", &st, 0) < 0) {
+                if (errno == ENOENT) {
+                        return errno;
+                } else
+                        return -errno;
+        }
+        return 0;
+}
+
+static int gocryptfs_run_command(const char *command, const char *input) {
+        assert(command);
+        assert(input);
+
+        FILE *fp = popen(command, "w");
+        if (!fp)
+                return log_error_errno(errno, "Failed to run command: %s: %m", command);
+
+        fputs(input, fp);
+
+        int ret = pclose(fp);
+        if (ret == -1)
+                return log_error_errno(errno, "Failed to close command stream: %m");
+
+        return ret;
+}
+
+static int gocryptfs_setup(const char *image_path, char **password) {
+        assert(image_path);
+        assert(password);
+        int r;
+
+        r = home_unshare_and_mkdir();
+        if (r < 0)
+                return r;
+
+        char command[1024];
+        char input[1024];
+
+        // Construct the gocryptfs init command
+        snprintf(command, sizeof(command), "gocryptfs -init %s", image_path);
+        snprintf(input, sizeof(input), "y\n%s\n%s", password[0], password[0]);
+
+        // We'll pass the password to stdin of the gocryptfs process
+        int result = gocryptfs_run_command(command, input);
+        if (result != 0)
+                return log_error_errno(errno, "Failed to initialize gocryptfs at %s: %m", image_path);
+
+        return 0;
+}
+
+static int gocryptfs_mount(const char *image_path, const char *root_path, char **passwords) {
+        assert(image_path);
+        assert(passwords);
+
+        char command[1024];
+        snprintf(command, sizeof(command), "gocryptfs %s %s", image_path, root_path);
+
+        STRV_FOREACH(pp, passwords) {
+                // Attempt to mount using the current password
+                int result = gocryptfs_run_command(command, *pp);
+                if (result == 0) {
+                        // Mount was successful with this password
+                        return 0;
+                }
+
+                // Log the failed attempt but don't return yet; try the next password
+                log_debug_errno(result,
+                                "Password %zu didn't work for mounting gocryptfs directory %s at %s: %m",
+                                (size_t) (pp - passwords),
+                                image_path,
+                                root_path);
+        }
+
+        // None of the passwords worked, return an error
+        return log_error_errno(
+                        ENOKEY,
+                        "Failed to mount gocryptfs directory %s at %s using provided passwords.",
+                        image_path,
+                        root_path);
+}
+
+
+static int gocryptfs_set_password(const char *config_path, char **old_passwords, char **new_password) {
+        assert(config_path);
+        assert(old_passwords);
+        assert(new_password);
+
+        char command[1024];
+        snprintf(command, sizeof(command), "gocryptfs -config %s -passwd", config_path);
+
+        STRV_FOREACH(pp, old_passwords) {
+                char combined_passwords[1024];
+                snprintf(combined_passwords, sizeof(combined_passwords), "%s\n%s", *pp, new_password[0]);
+
+                int result = gocryptfs_run_command(command, combined_passwords);
+                if (result == 0) {
+                        // Password change was successful with this old password
+                        return 0;
+                }
+
+                // Log the failed attempt but don't return yet; try the next old password
+                log_debug_errno(result,
+                                "Password %zu didn't work for unlocking gocryptfs at %s: %m",
+                                (size_t) (pp - old_passwords),
+                                config_path);
+        }
+
+        // None of the old passwords worked, return an error
+        return -ENOKEY; // No key available error
+}
+
+
 int home_setup_gocryptfs(UserRecord *h, HomeSetup *setup) {
 
         const char *ip;
@@ -46,21 +162,16 @@ int home_setup_gocryptfs(UserRecord *h, HomeSetup *setup) {
         if (setup->root_fd < 0)
                 return log_error_errno(errno, "Failed to open home directory: %m");
 
-        /* Check if the directory is already a gocryptfs encrypted directory.
-           This can be done by checking for the presence of the gocryptfs.conf file */
-        struct stat st;
-        if (fstatat(setup->image_fd, "gocryptfs.conf", &st, 0) < 0) {
-                if (errno == ENOENT) {
-                        return log_error_errno(errno, "Home directory %s is not encrypted.", ip);
-                } else {
-                        return log_error_errno(
+        r = is_gocryptfs_directory_fd(setup->image_fd);
+        if (r < 0)
+                return log_error_errno(errno, "Home directory %s is not encrypted: %m.", ip);
+        if (r > 0)
+                return log_error_errno(
                                         errno, "Failed to check if home directory %s is encrypted: %m", ip);
-                }
-        }
 
         r = gocryptfs_mount(ip, user_record_home_directory(h), h->password);
         if (r < 0)
-                return log_error("Failed to mount gocryptfs encrypted directory.");
+                return log_error_errno(errno, "Failed to mount gocryptfs encrypted directory %s: %m.", ip);
 
         /* Post-mount steps, such as binding the mounted directory, adjusting flags, etc. */
         r = home_unshare_and_mkdir();
@@ -120,7 +231,7 @@ int home_create_gocryptfs(UserRecord *h, HomeSetup *setup, char **effective_pass
 
         r = gocryptfs_mount(ip, user_record_home_directory(h), effective_passwords);
         if (r < 0)
-                return log_error("Failed to mount gocryptfs encrypted directory.");
+                return log_error_errno(errno, "Failed to mount gocryptfs encrypted directory %s: %m.", ip);
 
         r = home_populate(h, setup->root_fd);
         if (r < 0)
@@ -159,43 +270,6 @@ int home_create_gocryptfs(UserRecord *h, HomeSetup *setup, char **effective_pass
         return 0;
 }
 
-int gocryptfs_setup(const char *image_path, char **password) {
-        assert(image_path);
-        assert(password);
-
-        char command[1024];
-        char input[1024];
-
-        // Construct the gocryptfs init command
-        snprintf(command, sizeof(command), "gocryptfs -init %s", image_path);
-        snprintf(input, sizeof(input), "y\n%s\n%s", password, password);
-
-        // We'll pass the password to stdin of the gocryptfs process
-        int result = gocryptfs_run_command(command, password);
-        if (result != 0)
-                return log_error_errno(errno, "Failed to initialize gocryptfs at %s: %m", image_path);
-
-        return 0;
-}
-
-int gocryptfs_mount(const char *image_path, const char *root_path, char **password) {
-        assert(image_path);
-        assert(password);
-
-        char command[1024];
-
-        // Construct the gocryptfs init command
-        snprintf(command, sizeof(command), "gocryptfs %s %s", image_path, root_path);
-
-        // We'll pass the password to stdin of the gocryptfs process
-        int result = gocryptfs_run_command(command, password);
-        if (result != 0)
-                return log_error_errno(errno, "Failed to mount gocryptfs directory %s at %s: %m", image_path, root_path);
-
-        return 0;
-}
-
-
 int home_passwd_gocryptfs(UserRecord *h, HomeSetup *setup, char **new_passwords) {
 
         _cleanup_free_ char *config_path = NULL;
@@ -217,42 +291,4 @@ int home_passwd_gocryptfs(UserRecord *h, HomeSetup *setup, char **new_passwords)
                 return log_error_errno(r, "Failed to change gocryptfs password: %m");
 
         return 0;
-}
-
-int gocryptfs_set_password(const char *config_path, const char *old_password, char **new_passwords) {
-        assert(config_path);
-        assert(old_password);
-        assert(new_passwords);
-
-        char command[1024];
-
-        // Construct the gocryptfs password change command
-        snprintf(command, sizeof(command), "gocryptfs -passwd %s", config_path);
-
-        // We'll pass the old password followed by the new one to stdin of the gocryptfs process
-        char combined_passwords[1024];
-        snprintf(combined_passwords, sizeof(combined_passwords), "%s\n%s", old_password, new_passwords[0]);
-
-        int result = gocryptfs_run_command(command, combined_passwords);
-        if (result != 0)
-                return log_error_errno(errno, "Failed to change password for gocryptfs at %s: %m", config_path);
-
-        return 0;
-}
-
-static int gocryptfs_run_command(const char *command, const char *input) {
-        assert(command);
-        assert(input);
-
-        FILE *fp = popen(command, "w");
-        if (!fp)
-                return log_error_errno(errno, "Failed to run command: %s: %m", command);
-
-        fputs(input, fp);
-
-        int ret = pclose(fp);
-        if (ret == -1)
-                return log_error_errno(errno, "Failed to close command stream: %m");
-
-        return ret;
 }

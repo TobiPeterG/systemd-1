@@ -7,6 +7,7 @@ systemd_homework_sources = files(
         'homework-cifs.c',
         'homework-directory.c',
         'homework-fscrypt.c',
+        'homework-gocryptfs.c',
         'homework-luks.c',
         'homework-mount.c',
         'homework-password-cache.c',

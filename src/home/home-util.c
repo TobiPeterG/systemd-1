@@ -137,3 +137,16 @@ int bus_message_append_secret(sd_bus_message *m, UserRecord *secret) {
 const char *home_record_dir(void) {
         return secure_getenv("SYSTEMD_HOME_RECORD_DIR") ?: "/var/lib/systemd/home/";
 }
+
+int is_gocryptfs_directory_fd(int dir_fd){
+        /* Check if the directory is already a gocryptfs encrypted directory.
+           This can be done by checking for the presence of the gocryptfs.conf file */
+        struct stat st;
+        if (fstatat(dir_fd, "gocryptfs.conf", &st, 0) < 0) {
+                if (errno == ENOENT) {
+                        return errno;
+                } else
+                        return -errno;
+        }
+        return 0;
+}

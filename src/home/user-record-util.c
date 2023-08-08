@@ -1374,7 +1374,7 @@ int user_record_is_supported(UserRecord *hr, sd_bus_error *error) {
         if (hr->disposition >= 0 && hr->disposition != USER_REGULAR)
                 return sd_bus_error_set(error, SD_BUS_ERROR_INVALID_ARGS, "Cannot manage anything but regular users.");
 
-        if (hr->storage >= 0 && !IN_SET(hr->storage, USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS))
+        if (hr->storage >= 0 && !IN_SET(hr->storage, USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS, USER_GOCRYPTFS))
                 return sd_bus_error_set(error, SD_BUS_ERROR_INVALID_ARGS, "User record has storage type this service cannot manage.");
 
         if (gid_is_valid(hr->gid) && hr->uid != (uid_t) hr->gid)
