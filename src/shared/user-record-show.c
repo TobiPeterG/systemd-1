@@ -211,6 +211,7 @@ void user_record_show(UserRecord *hr, bool show_full_group_info) {
                 printf("     Storage: %s%s\n", user_storage_to_string(storage),
                        storage == USER_LUKS ? " (strong encryption)" :
                        storage == USER_FSCRYPT ? " (weak encryption)" :
+                       storage == USER_GOCRYPTFS ? " (weak encryption)" :
                        IN_SET(storage, USER_DIRECTORY, USER_SUBVOLUME) ? " (no encryption)" : "");
 
         ip = user_record_image_path(hr);

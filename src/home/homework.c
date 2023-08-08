@@ -15,6 +15,7 @@
 #include "homework-directory.h"
 #include "homework-fido2.h"
 #include "homework-fscrypt.h"
+#include "homework-gocryptfs.h"
 #include "homework-luks.h"
 #include "homework-mount.h"
 #include "homework-pkcs11.h"
@@ -479,6 +480,10 @@ int home_setup(
                 r = home_setup_cifs(h, flags, setup);
                 break;
 
+        case USER_GOCRYPTFS:
+                r = home_setup_gocryptfs(h, setup);
+                break;
+
         default:
                 return log_error_errno(SYNTHETIC_ERRNO(ENOLINK), "Processing home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
         }
@@ -877,7 +882,7 @@ static int home_activate(UserRecord *h, UserRecord **ret_home) {
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record lacks user name, refusing.");
         if (!uid_is_valid(h->uid))
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record lacks UID, refusing.");
-        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS))
+        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS, USER_GOCRYPTFS))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY), "Activating home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
 
         r = user_record_authenticate(h, h, &cache, /* strict_verify= */ false);
@@ -908,6 +913,7 @@ static int home_activate(UserRecord *h, UserRecord **ret_home) {
         case USER_SUBVOLUME:
         case USER_DIRECTORY:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
                 r = home_activate_directory(h, flags, &setup, &cache, &new_home);
                 if (r < 0)
                         return r;
@@ -947,7 +953,7 @@ static int home_deactivate(UserRecord *h, bool force) {
 
         if (!h->user_name)
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record incomplete, refusing.");
-        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS))
+        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS, USER_GOCRYPTFS))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY), "Deactivating home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
 
         r = user_record_test_home_directory_and_warn(h);
@@ -1386,6 +1392,9 @@ static int home_create(UserRecord *h, UserRecord **ret_home) {
         case USER_CIFS:
                 r = home_create_cifs(h, &setup, &new_home);
                 break;
+        case USER_GOCRYPTFS:
+                r = home_create_gocryptfs(h, &setup, effective_passwords, &new_home);
+                break;
 
         default:
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY),
@@ -1412,7 +1421,7 @@ static int home_remove(UserRecord *h) {
 
         if (!h->user_name)
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record lacks user name, refusing.");
-        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS))
+        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS, USER_GOCRYPTFS))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY), "Removing home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
 
         hd = user_record_home_directory(h);
@@ -1474,6 +1483,7 @@ static int home_remove(UserRecord *h) {
         case USER_SUBVOLUME:
         case USER_DIRECTORY:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
                 assert(ip);
 
                 r = rm_rf(ip, REMOVE_ROOT|REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_SYNCFS);
@@ -1530,7 +1540,7 @@ static int home_validate_update(UserRecord *h, HomeSetup *setup, HomeSetupFlags 
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record lacks user name, refusing.");
         if (!uid_is_valid(h->uid))
                 return log_error_errno(SYNTHETIC_ERRNO(EINVAL), "User record lacks UID, refusing.");
-        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS))
+        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_CIFS, USER_GOCRYPTFS))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY), "Processing home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
 
         r = user_record_test_home_directory_and_warn(h);
@@ -1550,6 +1560,7 @@ static int home_validate_update(UserRecord *h, HomeSetup *setup, HomeSetupFlags 
         case USER_DIRECTORY:
         case USER_SUBVOLUME:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
         case USER_CIFS:
                 break;
 
@@ -1670,6 +1681,7 @@ static int home_resize(UserRecord *h, bool automatic, UserRecord **ret) {
         case USER_DIRECTORY:
         case USER_SUBVOLUME:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
                 return home_resize_directory(h, flags, &setup, &cache, ret);
 
         default:
@@ -1688,7 +1700,7 @@ static int home_passwd(UserRecord *h, UserRecord **ret_home) {
         assert(h);
         assert(ret_home);
 
-        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT))
+        if (!IN_SET(user_record_storage(h), USER_LUKS, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS))
                 return log_error_errno(SYNTHETIC_ERRNO(ENOTTY), "Changing password of home directories of type '%s' currently not supported.", user_storage_to_string(user_record_storage(h)));
 
         r = user_record_compile_effective_passwords(h, &cache, &effective_passwords);
@@ -1721,6 +1733,12 @@ static int home_passwd(UserRecord *h, UserRecord **ret_home) {
 
         case USER_FSCRYPT:
                 r = home_passwd_fscrypt(h, &setup, &cache, effective_passwords);
+                if (r < 0)
+                        return r;
+                break;
+
+        case USER_GOCRYPTFS:
+                r = home_passwd_gocryptfs(h, &setup, effective_passwords);
                 if (r < 0)
                         return r;
                 break;

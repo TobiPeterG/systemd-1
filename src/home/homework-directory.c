@@ -68,7 +68,7 @@ int home_activate_directory(
         int r;
 
         assert(h);
-        assert(IN_SET(user_record_storage(h), USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT));
+        assert(IN_SET(user_record_storage(h), USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS));
         assert(setup);
         assert(ret_home);
 
@@ -270,7 +270,7 @@ int home_resize_directory(
         assert(h);
         assert(setup);
         assert(ret_home);
-        assert(IN_SET(user_record_storage(h), USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT));
+        assert(IN_SET(user_record_storage(h), USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS));
 
         r = home_setup(h, flags, setup, cache, NULL);
         if (r < 0)

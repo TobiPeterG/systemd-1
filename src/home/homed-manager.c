@@ -723,7 +723,7 @@ static int manager_add_home_by_image(
                 uid = h->uid;
         else {
                 r = manager_acquire_uid(m, start_uid, user_name,
-                                        IN_SET(storage, USER_SUBVOLUME, USER_DIRECTORY, USER_FSCRYPT) ? image_path : NULL,
+                                        IN_SET(storage, USER_SUBVOLUME, USER_DIRECTORY, USER_FSCRYPT, USER_GOCRYPTFS) ? image_path : NULL,
                                         &uid);
                 if (r < 0)
                         return log_warning_errno(r, "Failed to acquire unused UID for %s: %m", user_name);
@@ -768,7 +768,7 @@ int manager_augment_record_with_uid(
         if (uid_is_valid(hr->uid))
                 return 0;
 
-        if (IN_SET(hr->storage, USER_CLASSIC, USER_SUBVOLUME, USER_DIRECTORY, USER_FSCRYPT)) {
+        if (IN_SET(hr->storage, USER_CLASSIC, USER_SUBVOLUME, USER_DIRECTORY, USER_FSCRYPT, USER_GOCRYPTFS)) {
                 const char * ip;
 
                 ip = user_record_image_path(hr);
@@ -905,20 +905,33 @@ static int manager_assess_image(
                 if (r > 0)
                         storage = USER_SUBVOLUME;
                 else {
-                        struct fscrypt_policy policy;
+                        r = is_gocryptfs_directory_fd(fd);
+                        if (r < 0)
+                                return log_warning_errno(errno, "Failed to determine whether %s is a gocryptfs directory: %m", path);
+                        if (r > 0)
+                                storage = USER_GOCRYPTFS;
+                        else {
+                                struct fscrypt_policy policy;
 
-                        if (ioctl(fd, FS_IOC_GET_ENCRYPTION_POLICY, &policy) < 0) {
+                                if (ioctl(fd, FS_IOC_GET_ENCRYPTION_POLICY, &policy) < 0) {
 
-                                if (errno == ENODATA)
-                                        log_debug_errno(errno, "Determined %s is not fscrypt encrypted.", path);
-                                else if (ERRNO_IS_NOT_SUPPORTED(errno))
-                                        log_debug_errno(errno, "Determined %s is not fscrypt encrypted because kernel or file system doesn't support it.", path);
-                                else
-                                        log_debug_errno(errno, "FS_IOC_GET_ENCRYPTION_POLICY failed with unexpected error code on %s, ignoring: %m", path);
+                                        if (errno == ENODATA)
+                                                log_debug_errno(errno,
+                                                                "Determined %s is not fscrypt encrypted.",
+                                                                path);
+                                        else if (ERRNO_IS_NOT_SUPPORTED(errno))
+                                                log_debug_errno(errno,
+                                                                "Determined %s is not fscrypt encrypted because kernel or file system doesn't support it.",
+                                                                path);
+                                        else
+                                                log_debug_errno(errno,
+                                                                "FS_IOC_GET_ENCRYPTION_POLICY failed with unexpected error code on %s, ignoring: %m",
+                                                                path);
 
-                                storage = USER_DIRECTORY;
-                        } else
-                                storage = USER_FSCRYPT;
+                                        storage = USER_DIRECTORY;
+                                } else
+                                        storage = USER_FSCRYPT;
+                        }
                 }
 
                 return manager_add_home_by_image(m, user_name, realm, path, NULL, storage, st.st_uid);

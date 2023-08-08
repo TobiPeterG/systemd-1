@@ -1345,7 +1345,7 @@ int user_record_build_image_path(UserStorage storage, const char *user_name_and_
 
         if (storage == USER_LUKS)
                 suffix = ".home";
-        else if (IN_SET(storage, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT))
+        else if (IN_SET(storage, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS))
                 suffix = ".homedir";
         else {
                 *ret = NULL;
@@ -1743,7 +1743,7 @@ const char *user_record_image_path(UserRecord *h) {
         if (h->image_path_auto)
                 return h->image_path_auto;
 
-        return IN_SET(user_record_storage(h), USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT) ? user_record_home_directory(h) : NULL;
+        return IN_SET(user_record_storage(h), USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS) ? user_record_home_directory(h) : NULL;
 }
 
 const char *user_record_cifs_user_name(UserRecord *h) {
@@ -2295,6 +2295,7 @@ static const char* const user_storage_table[_USER_STORAGE_MAX] = {
         [USER_SUBVOLUME] = "subvolume",
         [USER_FSCRYPT]   = "fscrypt",
         [USER_CIFS]      = "cifs",
+        [USER_GOCRYPTFS] = "gocryptfs",
 };
 
 DEFINE_STRING_TABLE_LOOKUP(user_storage, UserStorage);

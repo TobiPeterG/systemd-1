@@ -30,7 +30,7 @@ int user_record_synthesize(
         assert(h);
         assert(user_name);
         assert(image_path);
-        assert(IN_SET(storage, USER_LUKS, USER_SUBVOLUME, USER_FSCRYPT, USER_DIRECTORY));
+        assert(IN_SET(storage, USER_LUKS, USER_SUBVOLUME, USER_FSCRYPT, USER_DIRECTORY, USER_GOCRYPTFS));
         assert(uid_is_valid(uid));
         assert(gid_is_valid(gid));
 
@@ -436,7 +436,7 @@ int user_record_test_home_directory(UserRecord *h) {
 
         /* If the image path and the home directory are identical, then it's OK if the directory is
          * populated. */
-        if (IN_SET(user_record_storage(h), USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT)) {
+        if (IN_SET(user_record_storage(h), USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME, USER_FSCRYPT, USER_GOCRYPTFS)) {
                 const char *ip;
 
                 ip = user_record_image_path(h);
@@ -534,6 +534,7 @@ int user_record_test_image_path(UserRecord *h) {
         case USER_DIRECTORY:
         case USER_SUBVOLUME:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
                 if (S_ISDIR(st.st_mode))
                         return USER_TEST_EXISTS;
 

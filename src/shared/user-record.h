@@ -28,6 +28,7 @@ typedef enum UserHomeStorage {
         USER_SUBVOLUME,
         USER_FSCRYPT,
         USER_CIFS,
+        USER_GOCRYPTFS,
         _USER_STORAGE_MAX,
         _USER_STORAGE_INVALID = -EINVAL,
 } UserStorage;

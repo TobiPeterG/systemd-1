@@ -2314,7 +2314,7 @@ static int home_get_disk_status_directory(
                 fstype = sfs.f_type;
         }
 
-        if (IN_SET(h->record->storage, USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME)) {
+        if (IN_SET(h->record->storage, USER_CLASSIC, USER_DIRECTORY, USER_SUBVOLUME, USER_GOCRYPTFS)) {
 
                 r = btrfs_is_subvol(path);
                 if (r < 0)
@@ -2354,7 +2354,7 @@ static int home_get_disk_status_directory(
                 }
         }
 
-        if (IN_SET(h->record->storage, USER_CLASSIC, USER_DIRECTORY, USER_FSCRYPT)) {
+        if (IN_SET(h->record->storage, USER_CLASSIC, USER_DIRECTORY, USER_FSCRYPT, USER_GOCRYPTFS)) {
                 r = quotactl_path(QCMD_FIXED(Q_GETQUOTA, USRQUOTA), path, h->uid, &req);
                 if (r < 0) {
                         if (ERRNO_IS_NOT_SUPPORTED(r)) {
@@ -2441,6 +2441,7 @@ static int home_get_disk_status_internal(
         case USER_DIRECTORY:
         case USER_SUBVOLUME:
         case USER_FSCRYPT:
+        case USER_GOCRYPTFS:
         case USER_CIFS:
                 return home_get_disk_status_directory(h, state, ret_disk_size, ret_disk_usage, ret_disk_free, ret_disk_ceiling, ret_disk_floor, ret_fstype, ret_access_mode);
 
